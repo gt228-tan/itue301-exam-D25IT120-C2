@@ -1,20 +1,47 @@
+import { BrowserRouter, Routes, Route } from "react-router-dom";
+
+import Navigation from "./components/Navigation";
+import ProtectedRoute from "./components/ProtectedRoute";
+
 import LoginPage from "./pages/LoginPage";
 import ApplyLeavePage from "./pages/ApplyLeavePage";
 import MyLeavesPage from "./pages/MyLeavesPage";
+import HRPanel from "./pages/HRPanel";
 
 function App() {
   return (
-    <div>
-      <LoginPage />
+    <BrowserRouter>
+      <Navigation />
 
       <hr />
 
-      <ApplyLeavePage />
+      <Routes>
+        <Route path="/login" element={<LoginPage />} />
 
-      <hr />
+        <Route
+          path="/apply"
+          element={
+            <ProtectedRoute>
+              <ApplyLeavePage />
+            </ProtectedRoute>
+          }
+        />
 
-      <MyLeavesPage />
-    </div>
+        <Route
+          path="/my-leaves"
+          element={
+            <ProtectedRoute>
+              <MyLeavesPage />
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
+          path="/hr-panel"
+          element={<HRPanel />}
+        />
+      </Routes>
+    </BrowserRouter>
   );
 }
 

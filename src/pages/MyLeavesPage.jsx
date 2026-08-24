@@ -1,6 +1,9 @@
+import { useAuth } from "../context/AuthContext";
 import LeaveRequestCard from "../components/LeaveRequestCard";
 
 function MyLeavesPage() {
+  const { employee } = useAuth();
+
   const leaveRequests = [
     {
       fromDate: "2026-08-10",
@@ -17,20 +20,16 @@ function MyLeavesPage() {
       leaveType: "Sick Leave",
       reason: "Not feeling well",
       status: "Approved"
-    },
-    {
-      fromDate: "2026-06-15",
-      toDate: "2026-06-16",
-      days: 2,
-      leaveType: "Casual Leave",
-      reason: "Family function",
-      status: "Rejected"
     }
   ];
 
   return (
     <div>
-      <h1>My Leave Requests</h1>
+      <h1>
+        Welcome, {employee ? employee.name : "Employee"}
+      </h1>
+
+      <h2>My Leaves</h2>
 
       {leaveRequests.map((leave, index) => (
         <LeaveRequestCard

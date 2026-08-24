@@ -14,14 +14,28 @@ function LeaveRequestCard({
 }) {
   return (
     <div>
-      <p>From Date: {fromDate}</p>
-      <p>To Date: {toDate}</p>
-      <p>Days: {days}</p>
-      <p>Leave Type: {leaveType}</p>
-      <p>Reason: {reason}</p>
+      <p>
+        <strong>From Date:</strong> {fromDate}
+      </p>
 
       <p>
-        Status:{" "}
+        <strong>To Date:</strong> {toDate}
+      </p>
+
+      <p>
+        <strong>Days:</strong> {days}
+      </p>
+
+      <p>
+        <strong>Leave Type:</strong> {leaveType}
+      </p>
+
+      <p>
+        <strong>Reason:</strong> {reason}
+      </p>
+
+      <p>
+        <strong>Status:</strong>{" "}
         <span
           style={{
             backgroundColor: colors[status.toLowerCase()],
@@ -33,6 +47,8 @@ function LeaveRequestCard({
           {status}
         </span>
       </p>
+
+      <hr />
     </div>
   );
 }

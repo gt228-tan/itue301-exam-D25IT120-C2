@@ -1,11 +1,13 @@
+require("dotenv").config();
+
 const express = require("express");
 const cors = require("cors");
+const mongoose = require("mongoose");
+const jwt = require("jsonwebtoken");
 
-const {
-  employees,
-  leaveTypes,
-  leaves
-} = require("./data/data");
+const Employee = require("./models/Employee");
+const LeaveType = require("./models/LeaveType");
+const LeaveRequest = require("./models/LeaveRequest");
 
 const requestLogger = require("./middleware/requestLogger");
 const authGuard = require("./middleware/authGuard");
@@ -13,219 +15,299 @@ const errorHandler = require("./middleware/errorHandler");
 
 const app = express();
 
-const PORT = 5000;
+const PORT = process.env.PORT || 5000;
 
-// Built-in middleware
+
+// ==========================================
+// Middleware
+// ==========================================
+
 app.use(cors());
 app.use(express.json());
-
-// Custom logger - applies globally
 app.use(requestLogger);
 
 
-// ============================================
+// ==========================================
+// MongoDB connection
+// ==========================================
+
+mongoose
+  .connect(process.env.MONGO_URI)
+  .then(() => {
+    console.log("MongoDB connected successfully");
+  })
+  .catch((error) => {
+    console.error("MongoDB connection failed");
+    console.error(error.message);
+  });
+
+
+// ==========================================
+// LOGIN
 // POST /api/v1/auth/login
-// ============================================
+// ==========================================
 
-app.post("/api/v1/auth/login", (req, res) => {
-  const { email, password } = req.body;
+app.post("/api/v1/auth/login", async (req, res, next) => {
+  try {
+    const { email, password } = req.body;
 
-  if (!email || !password) {
-    return res.status(400).json({
-      success: false,
-      message: "Email and password are required"
+    if (!email || !password) {
+      return res.status(400).json({
+        success: false,
+        message: "Email and password are required"
+      });
+    }
+
+    // NOTE:
+    // For this exam, password is not stored in Employee schema.
+    // We use email to find the employee.
+    const employee = await Employee.findOne({ email });
+
+    if (!employee) {
+      return res.status(401).json({
+        success: false,
+        message: "Invalid email or password"
+      });
+    }
+
+    const token = jwt.sign(
+      {
+        employeeId: employee._id
+      },
+      process.env.JWT_SECRET,
+      {
+        expiresIn: "1h"
+      }
+    );
+
+    res.status(200).json({
+      success: true,
+      employee: {
+        id: employee._id,
+        name: employee.name,
+        email: employee.email,
+        department: employee.department
+      },
+      token
     });
+
+  } catch (error) {
+    next(error);
   }
-
-  const employee = employees.find(
-    (emp) =>
-      emp.email === email &&
-      emp.password === password
-  );
-
-  if (!employee) {
-    return res.status(401).json({
-      success: false,
-      message: "Invalid email or password"
-    });
-  }
-
-  const token = `token-employee-${employee.id}`;
-
-  res.status(200).json({
-    success: true,
-    message: "Login successful",
-    employee: {
-      id: employee.id,
-      name: employee.name,
-      email: employee.email,
-      role: employee.role
-    },
-    token
-  });
 });
 
 
-// ============================================
-// GET /api/v1/leave-types
-// Public route
-// ============================================
+// ==========================================
+// GET LEAVE TYPES
+// Public
+// ==========================================
 
-app.get("/api/v1/leave-types", (req, res) => {
-  res.status(200).json({
-    success: true,
-    leaveTypes
-  });
+app.get("/api/v1/leave-types", async (req, res, next) => {
+  try {
+    const leaveTypes = await LeaveType.find();
+
+    res.status(200).json({
+      success: true,
+      leaveTypes
+    });
+
+  } catch (error) {
+    next(error);
+  }
 });
 
 
-// ============================================
-// Protected routes
-// ============================================
+// ==========================================
+// PROTECTED LEAVE ROUTES
+// ==========================================
 
 app.use("/api/v1/leaves", authGuard);
 
 
-// ============================================
+// ==========================================
 // POST /api/v1/leaves
-// Apply for leave
-// ============================================
+// Apply Leave
+// ==========================================
 
-app.post("/api/v1/leaves", (req, res) => {
-  const {
-    leaveType,
-    fromDate,
-    toDate,
-    reason
-  } = req.body;
-
-  if (
-    !leaveType ||
-    !fromDate ||
-    !toDate ||
-    !reason
-  ) {
-    return res.status(400).json({
-      success: false,
-      message:
-        "leaveType, fromDate, toDate and reason are required"
-    });
-  }
-
-  const start = new Date(fromDate);
-  const end = new Date(toDate);
-
-  if (end < start) {
-    return res.status(400).json({
-      success: false,
-      message: "toDate cannot be before fromDate"
-    });
-  }
-
-  const days =
-    Math.floor(
-      (end - start) / (1000 * 60 * 60 * 24)
-    ) + 1;
-
-  const newLeave = {
-    id: leaves.length + 1,
-    employeeId: req.employee.id,
-    employeeName: req.employee.name,
-    leaveType,
-    fromDate,
-    toDate,
-    days,
-    reason,
-    status: "pending"
-  };
-
-  leaves.push(newLeave);
-
-  res.status(201).json({
-    success: true,
-    message: "Leave applied successfully",
-    leave: newLeave
-  });
-});
-
-
-// ============================================
-// GET /api/v1/leaves/my
-// Employee's own leaves
-// ============================================
-
-app.get("/api/v1/leaves/my", (req, res) => {
-  const myLeaves = leaves.filter(
-    (leave) =>
-      leave.employeeId === req.employee.id
-  );
-
-  res.status(200).json({
-    success: true,
-    leaves: myLeaves
-  });
-});
-
-
-// ============================================
-// PATCH /api/v1/leaves/:id/status
-// HR approves/rejects leave
-// ============================================
-
-app.patch(
-  "/api/v1/leaves/:id/status",
-  (req, res) => {
-
-    // Only HR can change status
-    if (req.employee.role !== "hr") {
-      return res.status(401).json({
-        success: false,
-        message: "Only HR can update leave status"
-      });
-    }
-
-    const ALLOWED = [
-      "approved",
-      "rejected"
-    ];
+app.post("/api/v1/leaves", async (req, res, next) => {
+  try {
+    const {
+      leaveTypeId,
+      fromDate,
+      toDate,
+      days,
+      reason
+    } = req.body;
 
     if (
-      !req.body.status ||
-      !ALLOWED.includes(req.body.status)
+      !leaveTypeId ||
+      !fromDate ||
+      !toDate ||
+      !days
     ) {
       return res.status(400).json({
         success: false,
         message:
-          "Status must be either approved or rejected"
+          "leaveTypeId, fromDate, toDate and days are required"
       });
     }
 
-    const leaveId = Number(req.params.id);
-
-    const leave = leaves.find(
-      (item) => item.id === leaveId
+    // Find employee
+    const employee = await Employee.findById(
+      req.employee.id
     );
 
-    if (!leave) {
-      return res.status(400).json({
+    if (!employee) {
+      return res.status(401).json({
         success: false,
-        message: "Leave request not found"
+        message: "Employee not found"
       });
     }
 
-    leave.status = req.body.status;
+    // Check leave balance
+    if (days > employee.leaveBalance) {
+      return res.status(400).json({
+        success: false,
+        message:
+          `Insufficient leave balance. Available balance: ${employee.leaveBalance}`
+      });
+    }
+
+    // Check leave type
+    const leaveType = await LeaveType.findById(
+      leaveTypeId
+    );
+
+    if (!leaveType) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid leave type"
+      });
+    }
+
+    // Create LeaveRequest
+    const leaveRequest = await LeaveRequest.create({
+      employeeId: employee._id,
+      leaveTypeId: leaveType._id,
+      fromDate,
+      toDate,
+      days,
+      reason
+    });
+
+    // Deduct balance
+    await Employee.findByIdAndUpdate(
+      employee._id,
+      {
+        $inc: {
+          leaveBalance: -days
+        }
+      },
+      {
+        new: true
+      }
+    );
+
+    res.status(201).json({
+      success: true,
+      message: "Leave applied successfully",
+      leave: leaveRequest
+    });
+
+  } catch (error) {
+    next(error);
+  }
+});
+
+
+// ==========================================
+// GET /api/v1/leaves/my
+// ==========================================
+
+app.get("/api/v1/leaves/my", async (req, res, next) => {
+  try {
+    const leaves = await LeaveRequest.find({
+      employeeId: req.employee.id
+    })
+      .populate(
+        "leaveTypeId",
+        "name maxDaysPerYear"
+      )
+      .sort({
+        createdAt: -1
+      });
 
     res.status(200).json({
       success: true,
-      message: "Leave status updated",
-      leave
+      leaves
     });
+
+  } catch (error) {
+    next(error);
+  }
+});
+
+
+// ==========================================
+// PATCH /api/v1/leaves/:id/status
+// ==========================================
+
+app.patch(
+  "/api/v1/leaves/:id/status",
+  async (req, res, next) => {
+    try {
+      const ALLOWED = [
+        "approved",
+        "rejected"
+      ];
+
+      if (!ALLOWED.includes(req.body.status)) {
+        return res.status(400).json({
+          success: false,
+          message:
+            "Status must be approved or rejected"
+        });
+      }
+
+      const leave = await LeaveRequest.findById(
+        req.params.id
+      );
+
+      if (!leave) {
+        return res.status(400).json({
+          success: false,
+          message: "Leave request not found"
+        });
+      }
+
+      leave.status = req.body.status;
+
+      await leave.save();
+
+      res.status(200).json({
+        success: true,
+        message: "Leave status updated",
+        leave
+      });
+
+    } catch (error) {
+      next(error);
+    }
   }
 );
 
 
+// ==========================================
+// GLOBAL ERROR HANDLER
+// Must be LAST
+// ==========================================
 
 app.use(errorHandler);
+
+
+// ==========================================
+// Start server
+// ==========================================
 
 app.listen(PORT, () => {
   console.log(
